@@ -8,7 +8,6 @@ geopandas
 
 import os
 import multiprocessing
-from functools import partial
 from datetime import datetime, timedelta
 
 import requests
@@ -50,39 +49,45 @@ def download_file(url, save_path):
         print(f"Error downloading {save_path}: {e}")
 
 
-def process_profile(profile, main_data):
-    BASE_URL = "https://psl.noaa.gov/thredds/fileServer/Datasets/NARR/pressure/{}.{}.nc"
-    os.makedirs(f'./assets/{profile}', exist_ok=True)
+def main():
+    # Read the data
+    main_data = gpd.read_file('./full_globfire/full_globfire.shp')
+    bottom = main_data['area_ha'].quantile(0.2)
+    main_data = main_data[main_data['area_ha'] > bottom]
 
-    for _, row in main_data.iterrows():
-        year_months = get_relevant_months(row['initialdat'])
+    main_data['initialdat'] = pd.to_datetime(
+        main_data['initialdat'], errors='coerce')
+    dates = main_data['initialdat'].dropna().unique()
+
+    # Collect all relevant months
+    year_months = set()
+    for date in dates:
+        months = get_relevant_months(date)
+        year_months.update(months)
+
+    profiles_of_interest = [
+        'air',    # Air Temperature
+        'hgt',    # Geopotential Height
+        'omega',  # Vertical Velocity in Pressure Coordinates
+        'shum',   # Specific Humidity
+        'tke',    # Turbulent Kinetic Energy
+        'uwnd',   # U-component of wind
+        'vwnd'    # V-component of wind
+    ]
+
+    tasks = []
+    BASE_URL = "https://psl.noaa.gov/thredds/fileServer/Datasets/NARR/pressure/{}.{}.nc"
+    for profile in profiles_of_interest:
+        os.makedirs(f'./assets/{profile}', exist_ok=True)
         for month in year_months:
             url = BASE_URL.format(profile, month)
             save_path = os.path.join(
                 'assets', profile, f"{profile}.{month}.nc")
-            download_file(url, save_path)
+            tasks.append((url, save_path))
 
-
-def main():
-    main_data = gpd.read_file('./full_globfire/full_globfire.shp')
-    bottom = main_data['area_ha'].quantile(0.2)
-    main_data = main_data[main_data['area_ha'] > bottom]
-    main_data = pd.concat([main_data, main_data.bounds], axis=1)
-
-    profiles_of_interest = [
-        'air',  # Air Temperature
-        'hgt',  # Geo-potential Height
-        'omega',  # Vertical Velocity in Pressure Coordinates
-        'shum',  # Specific Humidity
-        'tke',  # Turbulent Kinetic Energy
-        'uwnd',  # U-component of wind
-        'vwnd'  # V-component of wind
-    ]
-
-    process_profile_partial = partial(process_profile, main_data=main)
-
+    # Use multiprocessing to download the files
     with multiprocessing.Pool() as pool:
-        pool.map(process_profile_partial, profiles_of_interest)
+        pool.starmap(download_file, tasks)
 
 
 if __name__ == "__main__":

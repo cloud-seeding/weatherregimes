@@ -4,6 +4,8 @@ REQUIREMENTS:
 requests
 pandas
 geopandas
+
+EST. for complete Download: 8-30mins based on internet connection.
 """
 
 import os

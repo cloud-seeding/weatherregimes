@@ -64,13 +64,20 @@ def process_profile(profile, main_data):
 
 
 def main():
-    main = gpd.read_file('./full_globfire/full_globfire.shp')
-    bottom = main['area_ha'].quantile(0.2)
-    main = main[main['area_ha'] > bottom]
-    main = pd.concat([main, main.bounds], axis=1)
+    main_data = gpd.read_file('./full_globfire/full_globfire.shp')
+    bottom = main_data['area_ha'].quantile(0.2)
+    main_data = main_data[main_data['area_ha'] > bottom]
+    main_data = pd.concat([main_data, main_data.bounds], axis=1)
 
-    profiles_of_interest = ['air', 'hgt',
-                            'omega', 'shum', 'tke', 'uwnd', 'vwnd']
+    profiles_of_interest = [
+        'air',  # Air Temperature
+        'hgt',  # Geo-potential Height
+        'omega',  # Vertical Velocity in Pressure Coordinates
+        'shum',  # Specific Humidity
+        'tke',  # Turbulent Kinetic Energy
+        'uwnd',  # U-component of wind
+        'vwnd'  # V-component of wind
+    ]
 
     process_profile_partial = partial(process_profile, main_data=main)
 

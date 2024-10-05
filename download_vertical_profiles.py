@@ -87,6 +87,10 @@ def main():
         main_data['initialdat'], errors='coerce')
     main_data = main_data.dropna(subset=['initialdat'])
 
+    # Compute bounds and add them to main_data
+    bounds = main_data.geometry.bounds
+    main_data = main_data.join(bounds)
+
     profiles_of_interest = [
         'air',    # Air Temperature
         'hgt',    # Geopotential Height
@@ -103,10 +107,11 @@ def main():
         event_date = row['initialdat']
         minx, miny, maxx, maxy = row['minx'], row['miny'], row['maxx'], row['maxy']
 
+        # Ensure coordinates are within valid ranges
         if any(pd.isnull([minx, miny, maxx, maxy])):
-            continue
+            continue  # Skip if coordinates are missing
 
-        # Create a buffer around the fire event if needed (optional)
+        # Create a buffer around the fire event
         buffer = 0.5  # degrees
         minx -= buffer
         miny -= buffer
@@ -127,10 +132,8 @@ def main():
 
             tasks.append((url, save_path))
 
-    # Remove duplicate tasks
     tasks = list({(task[0], task[1]) for task in tasks})
 
-    # Use multiprocessing to download the files
     with multiprocessing.Pool() as pool:
         pool.starmap(download_file, tasks)
 

@@ -12,11 +12,11 @@ shapely
 import os
 import multiprocessing
 from datetime import timedelta
-
+import xarray as xr
 import requests
+import numpy as np
 import pandas as pd
 import geopandas as gpd
-from shapely.geometry import box
 
 
 def adjust_longitude(lon):
@@ -28,49 +28,34 @@ def adjust_longitude(lon):
     return lon
 
 
-def construct_ncss_url(profile, date, minx, miny, maxx, maxy):
+def construct_ncss_url(profile, date):
     """
     Construct the NCSS URL for the given parameters.
     """
-    BASE_URL = "https://psl.noaa.gov/thredds/ncss/grid/Datasets/NARR/pressure/{profile}.{year}{month:02d}.nc"
+    BASE_URL = "https://psl.noaa.gov/thredds/dodsC/Datasets/NARR/pressure/{profile}.{year}{month:02d}.nc"
     url = BASE_URL.format(profile=profile, year=date.year, month=date.month)
-
-    # Adjust longitudes if necessary
-    west = adjust_longitude(minx)
-    east = adjust_longitude(maxx)
-
-    # Ensure the longitudes are in the correct order
-    if west > east:
-        west, east = east, west
-
-    # NCSS parameters
-    params = {
-        'var': profile,
-        'north': maxy,
-        'south': miny,
-        'west': west,
-        'east': east,
-        'horizStride': 1,
-        'time_start': (date - timedelta(days=2)).strftime('%Y-%m-%dT00:00:00Z'),
-        'time_end': (date + timedelta(days=2)).strftime('%Y-%m-%dT21:00:00Z'),
-        'accept': 'netcdf4-classic'
-    }
-
-    # Build the full URL with parameters
-    request_url = url + '?' + \
-        '&'.join(f"{key}={value}" for key, value in params.items())
-    return request_url
+    return url
 
 
-def download_file(url, save_path):
+def download_file(url, save_path, lat_min, lon_min, lat_max, lon_max):
     try:
-        response = requests.get(url, stream=True, timeout=120)
-        response.raise_for_status()
-        with open(save_path, 'wb') as file:
-            for chunk in response.iter_content(chunk_size=8192):
-                file.write(chunk)
+        data = xr.open_dataset(url)
+        lon_mask = (data['lon'] >= lon_min) & (data['lon'] <= lon_max)
+        lat_mask = (data['lat'] >= lat_min) & (data['lat'] <= lat_max)
+        combined_mask = lon_mask & lat_mask
+
+        # Step 2: Find the `x` and `y` indices that match the bounding box
+        y_indices, x_indices = np.where(combined_mask)  # Get the indices of True values in the mask
+
+        # Step 3: Get the min and max indices for `x` and `y`
+        x_min, x_max = x_indices.min(), x_indices.max()
+        y_min, y_max = y_indices.min(), y_indices.max()
+
+        # Step 4: Subset the data using `isel()` with these indices
+        subset = data.isel(x=slice(x_min, x_max + 1), y=slice(y_min, y_max + 1))
+        subset.save(save_path)
         print(f"Successfully downloaded {save_path}")
-    except requests.RequestException as e:
+    except Exception as e:
         print(f"Error downloading {save_path}: {e}")
 
 
@@ -124,19 +109,18 @@ def main():
 
             # Construct the NCSS URL
             url = construct_ncss_url(
-                profile, event_date, minx, miny, maxx, maxy)
+                profile, event_date)
 
             # Save files with unique names based on event ID and profile
             save_filename = f"{profile}_{row['_uid_']}_{event_date.strftime('%Y%m%d')}.nc"
             save_path = os.path.join(save_dir, save_filename)
 
-            tasks.append((url, save_path))
+            tasks.append((url, save_path, minx, miny, maxx, maxy))
 
-    tasks = list({(task[0], task[1]) for task in tasks})
+    tasks = list({(task[0], task[1], task[2], task[3], task[4], task[5]) for task in tasks})
 
     with multiprocessing.Pool() as pool:
         pool.starmap(download_file, tasks)
-
 
 if __name__ == "__main__":
     main()

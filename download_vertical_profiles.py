@@ -10,23 +10,22 @@ shapely
 
 
 import os
+import random
 import multiprocessing
 from datetime import timedelta
-
 import requests
 import pandas as pd
 import geopandas as gpd
-from shapely.geometry import box
+import cartopy.crs as ccrs
+from time import sleep
 
-
-def adjust_longitude(lon):
-    """
-    Adjust longitude to the 0 to 360 range required by the dataset if necessary.
-    """
-    if lon < 0:
-        return lon + 360
-    return lon
-
+lambert_crs = ccrs.LambertConformal(
+    central_longitude=-107.0,
+    central_latitude=50.0,
+    standard_parallels=[50.0, 50.0],
+    false_easting=5632642.22547,
+    false_northing=4612545.65137
+)
 
 def construct_ncss_url(profile, date, minx, miny, maxx, maxy):
     """
@@ -35,21 +34,13 @@ def construct_ncss_url(profile, date, minx, miny, maxx, maxy):
     BASE_URL = "https://psl.noaa.gov/thredds/ncss/grid/Datasets/NARR/pressure/{profile}.{year}{month:02d}.nc"
     url = BASE_URL.format(profile=profile, year=date.year, month=date.month)
 
-    # Adjust longitudes if necessary
-    west = adjust_longitude(minx)
-    east = adjust_longitude(maxx)
-
-    # Ensure the longitudes are in the correct order
-    if west > east:
-        west, east = east, west
-
     # NCSS parameters
     params = {
         'var': profile,
-        'north': maxy,
-        'south': miny,
-        'west': west,
-        'east': east,
+        'maxy': maxy,
+        'minx': minx,
+        'maxx': maxx,
+        'miny': miny,
         'horizStride': 1,
         'time_start': (date - timedelta(days=2)).strftime('%Y-%m-%dT00:00:00Z'),
         'time_end': (date + timedelta(days=2)).strftime('%Y-%m-%dT21:00:00Z'),
@@ -63,6 +54,7 @@ def construct_ncss_url(profile, date, minx, miny, maxx, maxy):
 
 
 def download_file(url, save_path):
+    sleep(random.randint(1,5))
     try:
         response = requests.get(url, stream=True, timeout=120)
         response.raise_for_status()
@@ -80,7 +72,7 @@ def main():
 
     # Filter data based on 'area_ha' quantile
     bottom = main_data['area_ha'].quantile(0.2)
-    main_data = main_data[main_data['area_ha'] > bottom]
+    main_data = main_data[main_data['area_ha'] > bottom].sample(frac=1)
 
     # Ensure 'initialdat' is datetime
     main_data['initialdat'] = pd.to_datetime(
@@ -103,9 +95,13 @@ def main():
 
     # Prepare download tasks
     tasks = []
-    for _, row in main_data.iterrows():
+    for i, row in main_data.iterrows():
+        if i == 8:
+            break
         event_date = row['initialdat']
         minx, miny, maxx, maxy = row['minx'], row['miny'], row['maxx'], row['maxy']
+        minx, miny = lambert_crs.transform_point(minx, miny, ccrs.Geodetic())
+        maxx, maxy = lambert_crs.transform_point(maxx, maxy, ccrs.Geodetic())
 
         # Ensure coordinates are within valid ranges
         if any(pd.isnull([minx, miny, maxx, maxy])):
@@ -136,7 +132,6 @@ def main():
 
     with multiprocessing.Pool() as pool:
         pool.starmap(download_file, tasks)
-
 
 if __name__ == "__main__":
     main()

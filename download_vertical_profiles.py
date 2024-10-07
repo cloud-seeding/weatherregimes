@@ -10,6 +10,7 @@ shapely
 
 
 import os
+import sys
 import multiprocessing
 from datetime import timedelta
 import xarray as xr
@@ -17,15 +18,13 @@ import requests
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-
+from loguru import logger
 
 def adjust_longitude(lon):
     """
     Adjust longitude to the 0 to 360 range required by the dataset if necessary.
     """
-    if lon < 0:
-        return lon + 360
-    return lon
+    return (lon + 360) % 360
 
 
 def construct_ncss_url(profile, date):
@@ -37,7 +36,7 @@ def construct_ncss_url(profile, date):
     return url
 
 
-def download_file(url, save_path, lat_min, lon_min, lat_max, lon_max):
+def download_file(url, save_path, lon_min, lat_min, lon_max, lat_max):
     try:
         data = xr.open_dataset(url)
         lon_mask = (data['lon'] >= lon_min) & (data['lon'] <= lon_max)
@@ -53,10 +52,10 @@ def download_file(url, save_path, lat_min, lon_min, lat_max, lon_max):
 
         # Step 4: Subset the data using `isel()` with these indices
         subset = data.isel(x=slice(x_min, x_max + 1), y=slice(y_min, y_max + 1))
-        subset.save(save_path)
-        print(f"Successfully downloaded {save_path}")
+        subset.to_netcdf(save_path)
+        logger.debug(f"Successfully downloaded {save_path}")
     except Exception as e:
-        print(f"Error downloading {save_path}: {e}")
+        logger.error(f"Error downloading {save_path}: {e}")
 
 
 def main():
@@ -88,7 +87,9 @@ def main():
 
     # Prepare download tasks
     tasks = []
-    for _, row in main_data.iterrows():
+    for i, row in main_data.iterrows():
+        if i==10:
+            break
         event_date = row['initialdat']
         minx, miny, maxx, maxy = row['minx'], row['miny'], row['maxx'], row['maxy']
 
@@ -117,10 +118,13 @@ def main():
 
             tasks.append((url, save_path, minx, miny, maxx, maxy))
 
-    tasks = list({(task[0], task[1], task[2], task[3], task[4], task[5]) for task in tasks})
+    #tasks = list({(task[0], task[1], task[2], task[3], task[4], task[5]) for task in tasks})
 
-    with multiprocessing.Pool() as pool:
-        pool.starmap(download_file, tasks)
+    # with multiprocessing.Pool() as pool:
+    #     pool.starmap(download_file, tasks, timeout=10)
+
+    for task in tasks:
+        download_file(*task)
 
 if __name__ == "__main__":
     main()

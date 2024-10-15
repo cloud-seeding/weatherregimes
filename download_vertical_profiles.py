@@ -27,6 +27,12 @@ lambert_crs = ccrs.LambertConformal(
     false_northing=4612545.65137
 )
 
+def adjust_longitude(lon):
+    """
+    Adjust longitude to the 0 to 360 range required by the dataset if necessary.
+    """
+    return (lon + 360) % 360
+
 def construct_ncss_url(profile, date, minx, miny, maxx, maxy):
     """
     Construct the NCSS URL for the given parameters.
@@ -37,13 +43,12 @@ def construct_ncss_url(profile, date, minx, miny, maxx, maxy):
     # NCSS parameters
     params = {
         'var': profile,
-        'maxy': maxy,
-        'minx': minx,
-        'maxx': maxx,
-        'miny': miny,
+        'north': maxy,
+        'west': minx,
+        'east': maxx,
+        'south': miny,
         'horizStride': 1,
-        'time_start': (date - timedelta(days=2)).strftime('%Y-%m-%dT00:00:00Z'),
-        'time_end': (date + timedelta(days=2)).strftime('%Y-%m-%dT21:00:00Z'),
+        'time': date.strftime('%Y-%m-%dT00:00:00Z'),
         'accept': 'netcdf4-classic'
     }
 
@@ -96,12 +101,10 @@ def main():
     # Prepare download tasks
     tasks = []
     for i, row in main_data.iterrows():
-        if i == 8:
+        if i == 20:
             break
         event_date = row['initialdat']
-        minx, miny, maxx, maxy = row['minx'], row['miny'], row['maxx'], row['maxy']
-        minx, miny = lambert_crs.transform_point(minx, miny, ccrs.Geodetic())
-        maxx, maxy = lambert_crs.transform_point(maxx, maxy, ccrs.Geodetic())
+        minx, miny, maxx, maxy = adjust_longitude(row['minx']), row['miny'], adjust_longitude(row['maxx']), row['maxy']
 
         # Ensure coordinates are within valid ranges
         if any(pd.isnull([minx, miny, maxx, maxy])):

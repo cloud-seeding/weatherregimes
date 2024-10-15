@@ -73,11 +73,11 @@ def download_file(url, save_path):
 
 def main():
     # Read the data
-    main_data = gpd.read_file('./full_globfire/full_globfire.shp')
+    main_data = gpd.read_file('./full_globfire/full_globfire.shp').sort_values(by='area_ha',ascending=False)[10:110]
 
     # Filter data based on 'area_ha' quantile
     bottom = main_data['area_ha'].quantile(0.2)
-    main_data = main_data[main_data['area_ha'] > bottom].sample(frac=1)
+    main_data = main_data[main_data['area_ha'] > bottom]
 
     # Ensure 'initialdat' is datetime
     main_data['initialdat'] = pd.to_datetime(
@@ -101,8 +101,6 @@ def main():
     # Prepare download tasks
     tasks = []
     for i, row in main_data.iterrows():
-        if i == 20:
-            break
         event_date = row['initialdat']
         minx, miny, maxx, maxy = adjust_longitude(row['minx']), row['miny'], adjust_longitude(row['maxx']), row['maxy']
 

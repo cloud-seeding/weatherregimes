@@ -59,7 +59,9 @@ def construct_ncss_url(profile, date, minx, miny, maxx, maxy):
 
 
 def download_file(url, save_path):
-    sleep(random.randint(1,5))
+    # sleep(random.randint(1,3))
+    if os.path.exists(save_path):
+        return 
     try:
         response = requests.get(url, stream=True, timeout=120)
         response.raise_for_status()
@@ -73,7 +75,7 @@ def download_file(url, save_path):
 
 def main():
     # Read the data
-    main_data = gpd.read_file('./full_globfire/full_globfire.shp').sort_values(by='area_ha',ascending=False)
+    main_data = gpd.read_file('./full_globfire/full_globfire.shp')
 
     # Filter data based on 'area_ha' quantile
     bottom = main_data['area_ha'].quantile(0.2)
